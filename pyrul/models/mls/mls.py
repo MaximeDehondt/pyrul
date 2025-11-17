@@ -1,4 +1,5 @@
 # mls.py
+
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
@@ -16,22 +17,23 @@ class MLS_Model(RULModel):
     """
 
     def __init__(self,
-                 DATASET_NAME,
-                 FOLDS = None,
-                 VARS_TO_KEEP = None,
-                 R_EARLY = 130,
-                 MIN_TS_SIZE = None,
-                 WINDOW = 30,
-                 SLIDING_STEP = 15,
-                 GF_SIGMA = 5,
-                 ALPHA = 0,
-                 BETA = 0,
-                 LAMBDA1 = 0,
-                 LAMBDA2 = 0,
-                 DELTA_W = 2,
-                 K = 4,
-                 KERNEL_BANDWIDTH = 1,
-                 SEED=None):
+                 DATASET_NAME: str,
+                 FOLDS: int = None,
+                 VARS_TO_KEEP: list = None,
+                 R_EARLY: float = 130,
+                 MIN_TS_SIZE: int = None,
+                 WINDOW: int = 30,
+                 SLIDING_STEP: int = 15,
+                 GF_SIGMA: float = 5,
+                 ALPHA: float = 0,
+                 BETA: float = 0,
+                 LAMBDA1: float = 0,
+                 LAMBDA2: float = 0,
+                 DELTA_W: int = 2,
+                 K: int = 4,
+                 KERNEL_BANDWIDTH: float = 1,
+                 SEED: int = None
+                 )->None:
         """
             DATASET_NAME : str
                 The name of the dataset to use.
@@ -42,7 +44,7 @@ class MLS_Model(RULModel):
             VARS_TO_KEEP : list of str, default=None
                 The list of variables to keep. If None, default values will apply depending on DATASET_NAME.
 
-            R_EARLY : int, default=130
+            R_EARLY : float, default=130
                 The RUL threshold to apply to the train and validation labels. If None, no threshold is applied.
 
             MIN_TS_SIZE : int, default=None
@@ -131,6 +133,9 @@ class MLS_Model(RULModel):
             train_datasets : list
                 The transformed training datasets.
         """
+        if k<=-1 or k>=self._FOLDS:
+            raise ValueError("Invalid fold index. Allowed values range from 0 to "+str(self._FOLDS-1)+".")
+            
         # Min-max norm       
         self._df_train_mins[k] = df[self._VARS_TO_KEEP].min()
         self._df_train_maxs[k] = df[self._VARS_TO_KEEP].max()
@@ -162,6 +167,11 @@ class MLS_Model(RULModel):
             dataset : list
                 The transformed dataset.
         """
+        if k<-1 or k>=self._FOLDS:
+            raise ValueError("Invalid fold index. Allowed values range from -1 to "+str(self._FOLDS-1)+".")
+        if data_type not in ["train","val","test","test_full"]:
+            raise ValueError("Data type '"+data_type+"' not found.")
+            
         rd_trunc = data_type == "val"
         apply_thres = data_type in ["train","val"]
         
@@ -347,6 +357,9 @@ class MLS_Model(RULModel):
         """
             Fits each model to their respective training fold.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+            
         for k in tqdm(range(self._FOLDS), desc="fitting models"):
             self._models[k].fit(self._train_datasets["fold_data"][k], self._train_datasets["fold_labels"][k])
 
@@ -368,7 +381,7 @@ class MLS_Model(RULModel):
                 The evaluator object to compute the validation metric.
 
             data_load_path : str
-                The path to load the training and validation data.
+                The path to load the data.
 
             Returns
             ----------   
@@ -416,7 +429,86 @@ class MLS_Model(RULModel):
             path : str
                 The path to save the models.
         """
-        pass
+        print("Models do not have parameters. Save the train datasets and metrics to save the models.")
+        
+    def load_models(self, 
+                    path: str
+                    )->None:
+        """
+            Loads each model's state.
+    
+            Parameters
+            ----------
+            path : str
+                The path to load the models.
+        """                        
+        print("Models do not have parameters. Load the train datasets and metrics, and call model.build() then model.fit() to recover the models.")
+
+    def predict(self, 
+                x: np.array, 
+                k: int, 
+                do_mean: bool=True,
+                is_test: bool=False,
+                do_full_pred: bool=False,
+                )->np.array:
+        """
+            Returns the prediction associated to the input x, for the idxK-th model.
+            If k==-1, a list of all model predictions is returned, or the average of it
+            depending on do_mean.
+
+            Parameters
+            ----------
+            x : np.array
+                The data input.
+    
+            k : int
+                The index of the model to use.
+    
+            do_mean : bool
+                Whether to get the average prediction in the case of getting predictions from all models.
+
+            is_test : bool, default=False
+                Whether the data is test or not.
+
+            do_full_pred : bool, default=False
+                Whether to predict all RUL values for a given test trajectory.
+
+            Returns
+            ----------
+            preds : np.array
+                The model's RUL predictions.
+        """
+        if k!=-1:
+            if do_full_pred:
+                y_pred = []
+                for i in range(len(x)): # for each trajectory
+                    x_i = x[i]
+                    n = len(x_i)-self._MIN_TS_SIZE+1
+                    y_pred.append([self._models[k].predict([x_i[:self._MIN_TS_SIZE+j]])[0] for j in range(n)])
+
+                # Concatenating every RUL labels into one array
+                return np.concatenate(y_pred)
+            else:
+                return self._models[k].predict(x)
+        else:
+            if do_full_pred:
+                y_pred = []
+                for i in range(len(x)): # for each trajectory
+                    print("Predicting traj=",i+1,"...")
+                    x_i = x[i]
+                    n = len(x_i)-self._MIN_TS_SIZE+1
+                    fold_pred = []
+                    for k in range(self._FOLDS):
+                        print("Fold k=",k)
+                        fold_pred.append([self._models[k].predict([x_i[:self._MIN_TS_SIZE+j]])[0] for j in range(n)])
+                    y_pred.append(np.mean(fold_pred, axis=0))
+                return np.concatenate(y_pred)
+            else:
+                preds = [self._models[k].predict(x) for k in range(self._FOLDS)]
+            if do_mean:
+                return np.mean(preds, axis=0)
+            else:
+                return preds
 
     ###############################################################
     ##################### UTILITIES ###############################
@@ -426,11 +518,11 @@ class MLS_Model(RULModel):
                    idx: int, 
                    lengths: np.array,
                    data_type: str,
+                   is_pred_rul_compressed: bool=False
                   )->tuple:
         """
-            Returns 2 indices corresponding to the fold's idx-th unit.
-            Beware that because of data preprocess, the index of time series do not correspond
-            to the original units' index.
+            Returns 2 indices to select the idx-th unit.
+            Beware that due to data preprocess, the indices of time series do not correspond to the original units'.
 
             Parameters
             ----------  
@@ -443,12 +535,23 @@ class MLS_Model(RULModel):
             data_type : str
                 Is either "train", "val", "test" or "test_full".
 
+            is_pred_rul_compressed : bool, default=False
+                Whether the predicted data labels has been flattened and concatenated. In this case, the slicing should only be done on the predictions.
+
             Returns
             ----------
             slice_inf, slice_sup : tuple
                 The indices to select the desired unit.
         """
-        return idx, idx+1
+        if data_type not in ["train","val","test","test_full"]:
+            raise ValueError("Data type '"+data_type+"' not found.")
+
+        if is_pred_rul_compressed:
+            len_list = [0]+list(np.cumsum(np.array(lengths) - (self._MIN_TS_SIZE-1)))
+            slice_inf, slice_sup = int(len_list[idx]), int(len_list[idx+1])
+            return slice_inf, slice_sup
+        else:
+            return idx, idx+1
 
     def get_cycles(self, 
                    length: int,
@@ -470,7 +573,7 @@ class MLS_Model(RULModel):
             cycles : np.array
                 The time steps associated to the unit.
         """
-        return np.arange(1, length+1) * (10 if self._dataset_name=="femto" else 1)
+        return np.arange(self._MIN_TS_SIZE, length+1) * (10 if self._dataset_name=="femto" else 1)
 
     def save_hp_values(self,
                        path: str

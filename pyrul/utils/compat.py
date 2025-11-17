@@ -1,15 +1,31 @@
-# compat.py used to make RULModels compatible between different datasets.
+# compat.py
+# Used to make RULModels compatible between different datasets.
+
 from scipy.fft import rfft
 import numpy as np
 import pandas as pd
 
-def convert_cmapss_to_femto(df: pd.DataFrame)->pd.DataFrame:
+def convert_femto_to_cmapss(df: pd.DataFrame)->pd.DataFrame:
+    """
+        Transforms the original FEMTO dataset into a CMAPSS-like alternative version where
+        each segment is flattened into several statistical time/frequency-related features.
+    
+        Parameters
+        ----------            
+        df : pd.DataFrame 
+            The raw FEMTO dataframe.
+
+        Returns
+        -------
+        df : pd.DataFrame 
+            The new CMAPSS-like dataframe.
+    """
     old_names = ["hori_acc","vert_acc"]
     f_idx = list(np.repeat(["f" + str(i) for i in range(16)],2))
     names = [old_names[i%2]+"_"+f_idx[i] for i in range(32)]
     
     X, y, u, c = get_ts_and_labels(df, vars_to_keep=old_names)
-    X = extract_time_freq_features(X) # shape : (segments, 8*features)
+    X = extract_time_freq_features(X) # shape : (segments, 2*8*features)
 
     new_df = pd.DataFrame(data=X, columns=names)
     new_df["RUL"] = y
@@ -18,11 +34,10 @@ def convert_cmapss_to_femto(df: pd.DataFrame)->pd.DataFrame:
 
     return new_df
 
-def extract_time_features(x: np.array
-                          )->np.array:
+def extract_time_features(x: np.array)->np.array:
     """
-        Computes the following time-domain features per sub segment for each unit :
-        RMS, Kurtosis, Max, Std, Variance, Skewness, Peak-to-Peak and Min.
+        Computes the following time-domain features per segment for each unit :
+        Mean, std, RMS, kurtosis, max and min of absolute values, skewness and peak-to-peak.
 
         Parameters
         ----------            
@@ -58,11 +73,10 @@ def extract_time_features(x: np.array
 
     return x_new
 
-def extract_freq_features(x: np.array
-                          )->np.array:
+def extract_freq_features(x: np.array)->np.array:
     """
-        Computes the following frequency-domain features per sub segment for each unit :
-        RMS, Kurtosis, Max, Std, Variance, Skewness, Peak-to-Peak and Min.
+        Computes the following frequency-domain features per segment for each unit :
+        Mean, std, RMS, kurtosis, max and min of absolute values, skewness and peak-to-peak.
 
         Parameters
         ----------            
@@ -78,11 +92,25 @@ def extract_freq_features(x: np.array
     return extract_time_features(y)
 
 def extract_time_freq_features(x: np.array)->np.array:
+    """
+        Computes the following time and frequency-domain features per segment for each unit :
+        Mean, std, RMS, kurtosis, max and min of absolute values, skewness and peak-to-peak.
+
+        Parameters
+        ----------            
+        x : np.array 
+            The feature dataset array of shape (segments, time, features).
+
+        Returns
+        -------
+        x_new : np.array
+            The new feature dataset array of shape (segments, 16, features).
+    """
     x1 = extract_time_features(x)
     x2 = extract_freq_features(x)
     x = np.hstack([x1,x2])
-    x = np.reshape(x, (x.shape[0], x.shape[1]*x.shape[2]))
-    return x
+    x_new = np.reshape(x, (x.shape[0], x.shape[1]*x.shape[2]))
+    return x_new
 
 def get_ts_and_labels(df: pd.DataFrame,
                       vars_to_keep: list,
@@ -101,16 +129,16 @@ def get_ts_and_labels(df: pd.DataFrame,
         Returns
         -------
         X : np.array
-            The list of time series of each unit.
+            The array of segments of each unit, of shape (segments, time, features).
 
-        y : np.array
-            The associated RUL values.
+        labels : np.array
+            The associated RUL values array of shape (segments).
 
         units : np.array
-            The unit indices.
+            The unit indices array of shape (segments).
 
-        c : np.array
-            The operating condition groups indices.
+        conditions : np.array
+            The operating condition group indices array of shape (segments).
     """
     groups = df.groupby(['unit','RUL'], sort=False)
     data_series = groups[vars_to_keep].apply(np.array)
@@ -118,7 +146,4 @@ def get_ts_and_labels(df: pd.DataFrame,
     units = groups['unit'].head(1).values
     conditions = groups['condition'].head(1).values
     X = np.array(data_series.to_list())
-    y = np.expand_dims(labels,-1)
-    u = np.expand_dims(units,-1)
-    c = np.expand_dims(conditions,-1)
-    return X, y, units, c
+    return X, labels, units, conditions

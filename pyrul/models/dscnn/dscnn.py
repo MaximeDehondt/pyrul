@@ -1,4 +1,5 @@
 # dscnn.py
+
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -16,15 +17,16 @@ class DSCNN_Model(RULModel):
     """
 
     def __init__(self, 
-                 DATASET_NAME: str ="cmapss_fd001",
+                 DATASET_NAME: str = "cmapss_fd001",
                  FOLDS: int = None,
                  VARS_TO_KEEP: list = None,
-                 R_EARLY: int = 130,
+                 R_EARLY: float = 130,
                  WINDOW: int = 30,
                  BATCH_SIZE: int = 128,
                  EPOCHS: int = 100,
                  LEARNING_RATE: float = 1e-3,
-                 SEED: int = None):
+                 SEED: int = None
+                 )->None:
         """
             DATASET_NAME : str
                 The name of the dataset to use.
@@ -35,7 +37,7 @@ class DSCNN_Model(RULModel):
             VARS_TO_KEEP : list of str, default=None
                 The list of variables to keep. If None, default values will apply depending on DATASET_NAME.
 
-            R_EARLY : int, default=None
+            R_EARLY : float, default=None
                 The RUL threshold to apply to the train and validation labels. If None, no threshold is applied.
 
             WINDOW : int
@@ -65,7 +67,7 @@ class DSCNN_Model(RULModel):
         self._EPOCHS = EPOCHS
         self._LEARNING_RATE = LEARNING_RATE
 
-        # Data preprocess metrics (mix-max scaling for CMAPSS / z-norm for femto)
+        # Data preprocess metrics
         self._df_train_mins = [None]*self._FOLDS
         self._df_train_maxs = [None]*self._FOLDS
         self._df_train_min = None
@@ -95,6 +97,9 @@ class DSCNN_Model(RULModel):
             train_datasets : list
                 The transformed training datasets.
         """
+        if k<=-1 or k>=self._FOLDS:
+            raise ValueError("Invalid fold index. Allowed values range from 0 to "+str(self._FOLDS-1)+".")
+            
         # Min-max norm
         self._df_train_mins[k] = df[self._VARS_TO_KEEP].min()
         self._df_train_maxs[k] = df[self._VARS_TO_KEEP].max()
@@ -126,6 +131,11 @@ class DSCNN_Model(RULModel):
             dataset : list
                 The transformed dataset.
         """
+        if k<-1 or k>=self._FOLDS:
+            raise ValueError("Invalid fold index. Allowed values range from -1 to "+str(self._FOLDS-1)+".")
+        if data_type not in ["train","val","test","test_full"]:
+            raise ValueError("Data type '"+data_type+"' not found.")
+            
         # Step 1. Piecewise Linear RUL labels
         apply_thres = data_type in ["train","val"]
         if apply_thres and self._R_EARLY is not None:
@@ -338,6 +348,9 @@ class DSCNN_Model(RULModel):
             path : str
                 The path to save the models.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+            
         for k in range(self._FOLDS):
             self._models[k].save_weights(path+'_model_'+str(k)+'.weights.h5')
 
@@ -352,6 +365,9 @@ class DSCNN_Model(RULModel):
             path : str
                 The path to save the models.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+            
         for k in range(self._FOLDS):
             load_path = path+"_model_"+str(k)+".weights.h5"
             self._models[k].load_weights(load_path)
@@ -372,6 +388,9 @@ class DSCNN_Model(RULModel):
             histories : list
                 The list of every model fitting.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+            
         self._hist = []
         for k in tqdm(range(self._FOLDS), desc="fitting models"):
             X_train, y_train = self._train_datasets["fold_data"][k], self._train_datasets["fold_labels"][k]
@@ -403,7 +422,7 @@ class DSCNN_Model(RULModel):
                 The evaluator object to compute the validation metric.
 
             data_load_path : str
-                The path to load the training and validation data.
+                The path to load the data.
 
             Returns
             ----------   
@@ -439,8 +458,8 @@ class DSCNN_Model(RULModel):
                    data_type: str
                    )->tuple:
         """
-            Returns 2 indices corresponding to the fold's idx-th unit.
-            Beware that because of data preprocess, the indices of time series do not correspond to the original units'.
+            Returns 2 indices to select the idx-th unit.
+            Beware that due to data preprocess, the indices of time series do not correspond to the original units'.
 
             Parameters
             ----------  

@@ -22,6 +22,9 @@ class Metric():
 
             kind : str
                 The type of the metric. Is either "point-wise", "unit-wise" or "model-wise".
+
+            phase : int
+                The RUL phase to consider. Is either 0, 1 or -1.
         """
 
         self._metric = func
@@ -51,7 +54,7 @@ class Metric():
                 The length of the original units.
 
             data_type : str
-                The type of the data. Is either "train", "val", "test" or "test_full".
+                The type of the data. Is either "train", "val", "test", "test_full".
 
             model : RULModel
                 The predictive model.
@@ -64,50 +67,26 @@ class Metric():
             res : float
                 The metric value.
         """
-
-        if model._is_rul_normalized: # UNUSED
-            y_true = model.denorm(y_true, data_type, k, lengths)
-            y_pred = model.denorm(y_pred, data_type, k, lengths)
-
-        if model._is_deep_lstm: # for DeepLSTM, we look at last labels per unit in test data, or unmasked data in other datasets
-            if data_type=="test":
-                y_true = np.array([y_true[i][lengths[i]-1] for i in range(len(lengths))])
-                y_pred = np.array([y_pred[i][lengths[i]-1] for i in range(len(lengths))])
-
-            else:
-                mask = y_true!=-1.
-                y_true, y_pred = y_true[mask], y_pred[mask]
         
         if self._kind=="point_wise": # filtering points possible before point wise operations
-            if model._is_ibl: # for IBL, labels are entire trajectories and the models are seq2one so we only look at the last true RUL value for each unit
-                if data_type=="train": # train labels = 0 so not really worth the long computing time
-                    return np.nan
-                    
-                y_true = np.array([arr[-1] for arr in y_true])
 
             ori_size = np.size(y_true) # original nb of labels before filtering, to get metrics with additive properties
-
-            # Phase selection
-            if hasattr(model, "_R_EARLY") and model._R_EARLY is not None:
-                if (self._phase==1): # skip thresholded labels if possible
-                    mask = y_true<model._R_EARLY
-                    y_true, y_pred = y_true[mask], y_pred[mask]
-                        
-                elif (self._phase==0): # skip non-thresholed labels if possible
-                    mask = y_true>=model._R_EARLY
-                    y_true, y_pred = y_true[mask], y_pred[mask]
+            
+            if hasattr(model, "_R_EARLY") and model._R_EARLY is not None: # Phase selection
+                y_true, y_pred = select_phase(phase=self._phase, threshold=model._R_EARLY, y_true=y_true, y_pred=y_pred)
                 
             return self._metric(y_true=y_true, y_pred=y_pred, ori_size=ori_size)                   
 
         elif self._kind=="unit_wise": # filtering points during unit wise operations
-            if model._is_ibl or data_type=="test": # disabled for IBL (note : actually we can evaluate for IBL at each time step but it's long)
+            if data_type=="test":
                 return np.nan
             else:
-                
                 res = []
                 for i in range(len(lengths)): # evaluating every unit
                     if model._is_deep_lstm:
                         a, b = model.get_slices(i, lengths, data_type, is_unmasked=True)
+                    elif model._is_ibl:
+                        a, b = a, b = model.get_slices(i, lengths, data_type, is_pred_rul_compressed=(data_type=="test_full"))
                     else:
                         a, b = model.get_slices(i, lengths, data_type)
 
@@ -117,13 +96,7 @@ class Metric():
 
                     # Phase selection
                     if hasattr(model, "_R_EARLY") and model._R_EARLY is not None:
-                        if (self._phase==1): # skip thresholded labels if possible
-                            mask = y_true_sub<model._R_EARLY
-                            y_true_sub, y_pred_sub = y_true_sub[mask], y_pred_sub[mask]
-                                
-                        elif (self._phase==0): # skip non-thresholed labels if possible
-                            mask = y_true_sub>=model._R_EARLY
-                            y_true_sub, y_pred_sub = y_true_sub[mask], y_pred_sub[mask]
+                        y_true_sub, y_pred_sub = select_phase(phase=self._phase, threshold=model._R_EARLY, y_true=y_true_sub, y_pred=y_pred_sub)
 
                     if len(y_true_sub)>1:
                         res.append(self._metric(y_true=y_true_sub, y_pred=y_pred_sub))
@@ -131,12 +104,55 @@ class Metric():
                 return np.sum(res) / len(res)
 
         elif self._kind=="model_wise":
-            if model._is_ibl:
-                return np.nan
-            else:
+            if data_type == "test":
                 return self._metric(model, data_type)
+            else:
+                return np.nan
         else:
             raise ValueError("Metric kind '{k}' not found.".format(k=self._kind))
+
+
+def select_phase(phase: int,
+                 threshold: float,
+                 y_true: np.array,
+                 y_pred: np.array,
+                 )->tuple:
+    """
+        Based on phase, selects the thresholded or non-thresholded values, of y_true and y_pred using the values of y_true and the given r_early threshold.
+        If phase is -1, selects everything (no filter).
+
+        Parameters
+        ----------
+        phase : int
+            The phase to select. Is either 0 for thresholded values or 1 for non-thresholded values.
+
+        threshold : float
+            The RUL threshold.
+
+        y_true : np.array
+            The true RUL labels.
+
+        y_pred : np.array
+            The predicted RUL labels.
+            
+        Returns
+        -------
+        y_true : np.array
+            The filtered true RUL labels.
+
+        y_pred : np.array
+            The filtered predicted RUL labels.
+    """
+    if (phase==0): # select thresholded labels if possible
+        mask = y_true>=threshold
+    elif (phase==1): # select non-thresholed labels if possible
+        mask = y_true<threshold
+    elif (phase==-1):
+        return y_true, y_pred
+    else:
+        raise ValueError("Phase "+str(phase)+" not implemented.")
+
+    return y_true[mask], y_pred[mask]
 
 
 ####### List of specific metric classes below #######
@@ -196,7 +212,7 @@ class Metric_CV(Metric):
 
 class Metric_SSTD(Metric):
     def __init__(self, phase):
-        super().__init__(func=convergence,
+        super().__init__(func=sample_std,
                          kind="unit_wise", 
                          phase=phase)
 
@@ -209,7 +225,7 @@ class Metric_RT95(Metric):
 class Metric_PEARSON(Metric):
     def __init__(self, phase):
         super().__init__(func=pearson_corr,
-                         kind="unit_wise", 
+                         kind="point_wise", 
                          phase=phase)
 
 ####### List of specific metric functions below #######
@@ -356,7 +372,7 @@ def positive_mae(y_true,
                  ori_size=None,
                  )->float:
     """
-        Returns mean absolute error of predictions below the ground truth.
+        Returns mean absolute error of predictions above the ground truth (over-prediction).
         
         Parameters
         ----------
@@ -372,7 +388,7 @@ def positive_mae(y_true,
         Returns
         ----------
         pmae : float
-            The mean absolute error of predictions lesser than or equal to the labels.
+            The mean absolute error of predictions greather than the labels.
     """
     if ori_size:
         n = ori_size
@@ -380,7 +396,7 @@ def positive_mae(y_true,
         n = np.size(y_true)
         
     err = y_true - y_pred
-    err_p = err[err>=0]
+    err_p = err[err<0]
     pmae = np.sum(err_p)/n
     return pmae
 
@@ -506,9 +522,7 @@ def inference_time(model,
         t : float
             The time in seconds to call model.predict().
     """
-    if model._is_ibl:
-        return np.nan
-        
+
     if data_type=="test":
         x = model._test_dataset["data"]
     elif data_type=="test_full":
@@ -534,7 +548,8 @@ def inference_time(model,
     return t
 
 def pearson_corr(y_true, 
-                 y_pred
+                 y_pred,
+                 ori_size=None
                  )->float:
     """
         Returns the pearson correlation coefficient between y_true and y_pred.
@@ -546,6 +561,9 @@ def pearson_corr(y_true,
     
         y_pred : np.array of shape (n_values,)
             The predicted labels.
+
+        ori_size : int, default=None
+            Optional. The number of values in each arrays.
 
         Returns
         ----------

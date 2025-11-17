@@ -1,4 +1,5 @@
-# tsbpdtw.py
+# gbt.py
+
 import numpy as np
 import pandas as pd
 from pyrul.models.base import RULModel
@@ -28,7 +29,8 @@ class GBT_Model(RULModel):
                  MIN_SAMPLES_LEAF: int = 1,
                  MAX_DEPTH: int = 3,
                  WINDOW: int=5,
-                 SEED: int = None):
+                 SEED: int = None
+                 )->None:
         """
             Parameters
             ----------
@@ -106,6 +108,9 @@ class GBT_Model(RULModel):
             train_datasets : list
                 The transformed training datasets.
         """
+        if k<=-1 or k>=self._FOLDS:
+            raise ValueError("Invalid fold index. Allowed values range from 0 to "+str(self._FOLDS-1)+".")
+            
         return self.data_process_local_transform(df=df, k=k, data_type="train")
 
     def data_process_local_transform(self, 
@@ -133,6 +138,11 @@ class GBT_Model(RULModel):
             dataset : list
                 The transformed dataset.
         """
+        if k<-1 or k>=self._FOLDS:
+            raise ValueError("Invalid fold index. Allowed values range from -1 to "+str(self._FOLDS-1)+".")
+        if data_type not in ["train","val","test","test_full"]:
+            raise ValueError("Data type '"+data_type+"' not found.")
+            
         keep_last = data_type == "test"
     
         if self._dataset_name == "cmapss_fd001":
@@ -486,6 +496,9 @@ class GBT_Model(RULModel):
         """
             Fits each model to their respective training fold.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+
         for k in tqdm(range(self._FOLDS), desc="fitting models"):
             X_train, y_train = self._train_datasets["fold_data"][k], self._train_datasets["fold_labels"][k]
             self._models[k].fit(X=X_train, y=y_train)
@@ -508,7 +521,7 @@ class GBT_Model(RULModel):
                 The evaluator object to compute the validation metric.
 
             data_load_path : str
-                The path to load the training and validation data.
+                The path to load the data.
 
             Returns
             ----------   
@@ -525,12 +538,13 @@ class GBT_Model(RULModel):
 
             if self._dataset_name=="femto":
                 self._N_ESTIMATORS = trial.suggest_int('n_estimators', 0, 200, step=10)
+                self._MAX_DEPTH = trial.suggest_int('max_depth', 2, 30)
             else:
                 self._N_ESTIMATORS = 10
+                self._MAX_DEPTH = trial.suggest_int('max_depth', 2, 10)
             self._N_ESTIMATORS += (self._N_ESTIMATORS==0)
             self._MIN_SAMPLES_SPLIT =  trial.suggest_int('min_samples_split', 2, 100)
             self._MIN_SAMPLES_LEAF =  trial.suggest_int('min_samples_leaf', 1, 100)
-            self._MAX_DEPTH = trial.suggest_int('max_depth', 2, 10)
         
             set_seed(self._SEED) # doesn't affect sampler's state
 
@@ -554,6 +568,9 @@ class GBT_Model(RULModel):
             path : str
                 The path to save the models.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+
         for k in range(self._FOLDS):
             with open(path+'_model_'+str(k)+'.pkl', 'wb') as f:
                 pickle.dump(self._models[k], f)
@@ -639,9 +656,8 @@ class GBT_Model(RULModel):
                    data_type: str
                    )->tuple:
         """
-            Returns 2 indices corresponding to the fold's idx-th unit.
-            Beware that because of data preprocess, the index of time series do not correspond
-            to the original units' index.
+            Returns 2 indices to select the idx-th unit.
+            Beware that due to data preprocess, the indices of time series do not correspond to the original units'.
 
             Parameters
             ----------  

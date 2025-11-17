@@ -1,4 +1,5 @@
-# tsbpdtw.py
+# svr.py
+
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
@@ -30,7 +31,7 @@ class SVR_Model(RULModel):
                  C: float = 10,
                  EPSILON: float = 1e-3,
                  SEED: int = None
-                )->None:
+                 )->None:
         """
             Parameters
             ----------
@@ -103,6 +104,9 @@ class SVR_Model(RULModel):
             train_datasets : list
                 The transformed training datasets.
         """
+        if k<=-1 or k>=self._FOLDS:
+            raise ValueError("Invalid fold index. Allowed values range from 0 to "+str(self._FOLDS-1)+".")
+            
         # Min-max norm       
         self._df_train_mins[k] = df[self._VARS_TO_KEEP].min()
         self._df_train_maxs[k] = df[self._VARS_TO_KEEP].max()
@@ -134,6 +138,11 @@ class SVR_Model(RULModel):
             dataset : list
                 The transformed dataset.
         """
+        if k<-1 or k>=self._FOLDS:
+            raise ValueError("Invalid fold index. Allowed values range from -1 to "+str(self._FOLDS-1)+".")
+        if data_type not in ["train","val","test","test_full"]:
+            raise ValueError("Data type '"+data_type+"' not found.")
+            
         do_overlap = data_type in ["test","test_full"]
         keep_last = data_type == "test"
 
@@ -440,55 +449,13 @@ class SVR_Model(RULModel):
     def fit_model(self)->None:
         """
             Fits each model to their respective training fold.
-
-            Parameters
-            ----------
-            verbose : bool, default=True
-                Whether to display information on the fitting process.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+            
         for k in tqdm(range(self._FOLDS), desc="fitting models"):
             X_train, y_train = self._train_datasets["fold_data"][k], self._train_datasets["fold_labels"][k]
             self._models[k].fit(X=X_train, y=y_train)
-
-    def predict(self, 
-                x: np.array, 
-                k: int, 
-                do_mean: bool=True,
-                is_test: bool=False)->np.array:
-        """
-            Returns the prediction associated to the input x, for the idxK-th model.
-            If k==-1, a list of all model predictions is returned, or the average of it
-            depending on do_mean.
-
-            Parameters
-            ----------
-            x : np.array
-                The data input.
-    
-            k : int
-                The index of the model to use.
-    
-            do_mean : bool, default=True
-                Whether to get the average prediction in the case of getting predictions from all models.
-
-            is_test : bool, default=False
-                Whether the data is test or not.
-
-            Returns
-            ----------
-            preds : np.array
-                The model's RUL predictions.
-        """
-        if k!=-1:
-            raw_pred = self._models[k].predict(x)
-        else:
-            preds = [self._models[k].predict(x) for k in range(self._FOLDS)]
-            if do_mean:
-                raw_pred = np.mean(preds, axis=0)
-            else:
-                raw_pred = preds
-                
-        return raw_pred
         
     def get_hp_trial(self, 
                      dataloader, 
@@ -508,7 +475,7 @@ class SVR_Model(RULModel):
                 The evaluator object to compute the validation metric.
 
             data_load_path : str
-                The path to load the training and validation data.
+                The path to load the data.
 
             Returns
             ----------   
@@ -551,6 +518,9 @@ class SVR_Model(RULModel):
             path : str
                 The path to save the models.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+            
         for k in range(self._FOLDS):
             with open(path+'model_'+str(k)+'.pkl', 'wb') as f:
                 pickle.dump(self._models[k], f)
@@ -575,7 +545,7 @@ class SVR_Model(RULModel):
     ##################### UTILITIES ###############################
     ###############################################################
 
-    def get_features_idx_set(self, l):
+    def get_features_idx_set(self, l: list)->list:
         """
             Converts the sensor index list into the column indices to choose in X.
             Eg: 
@@ -593,9 +563,8 @@ class SVR_Model(RULModel):
                    data_type: str
                    )->tuple:
         """
-            Returns 2 indices corresponding to the fold's idx-th unit.
-            Beware that because of data preprocess, the index of time series do not correspond
-            to the original units' index.
+            Returns 2 indices to select the idx-th unit.
+            Beware that due to data preprocess, the indices of time series do not correspond to the original units'.
 
             Parameters
             ----------  
@@ -613,6 +582,9 @@ class SVR_Model(RULModel):
             slice_inf, slice_sup : tuple
                 The indices to select the desired unit.
         """
+        if data_type not in ["train","val","test","test_full"]:
+            raise ValueError("Data type '"+data_type+"' not found.")
+            
         if data_type=="test":
             return idx, idx+1
         else:
@@ -652,7 +624,7 @@ class SVR_Model(RULModel):
                        path: str
                        )->None:
         """
-            Saves the current hyperparameter values.
+            Saves the current hyperparameter values in a csv file.
 
             Parameters
             ----------

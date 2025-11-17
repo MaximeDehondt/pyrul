@@ -1,4 +1,5 @@
 # deeplstm.py
+
 import numpy as np
 import pandas as pd
 import glob
@@ -20,7 +21,7 @@ class DeepLSTM_Model(RULModel):
                  DATASET_NAME: str,
                  FOLDS: int = None,
                  VARS_TO_KEEP: list = None,
-                 R_EARLY: int = 130,
+                 R_EARLY: float = 130,
                  BATCH_SIZE: int = 16,
                  LEARNING_RATE: float = 1e-3,
                  ES: int = 10,
@@ -35,7 +36,8 @@ class DeepLSTM_Model(RULModel):
                  FNN2_DP: float = 0.,
                  L2: int = 10,
                  MAX_TS_LEN: int = None,
-                 SEED: int = None):
+                 SEED: int = None
+                 )->None:
         """
             DATASET_NAME : str
                 The name of the dataset to use.
@@ -46,7 +48,7 @@ class DeepLSTM_Model(RULModel):
             VARS_TO_KEEP : list of str, default=None
                 The list of variables to keep. If None, default values will apply depending on DATASET_NAME.
 
-            R_EARLY : int, default=None
+            R_EARLY : float, default=None
                 The RUL threshold to apply to the train and validation labels. If None, no threshold is applied.
 
             BATCH_SIZE : int, default=16
@@ -147,6 +149,9 @@ class DeepLSTM_Model(RULModel):
             train_datasets : list
                 The transformed training datasets.
         """
+        if k<=-1 or k>=self._FOLDS:
+            raise ValueError("Invalid fold index. Allowed values range from 0 to "+str(self._FOLDS-1)+".")
+            
         # Z-norm     
         self._df_train_means[k] = df[self._VARS_TO_KEEP].mean()
         self._df_train_stds[k] = df[self._VARS_TO_KEEP].std()
@@ -178,6 +183,11 @@ class DeepLSTM_Model(RULModel):
             dataset : list
                 The transformed dataset.
         """
+        if k<-1 or k>=self._FOLDS:
+            raise ValueError("Invalid fold index. Allowed values range from -1 to "+str(self._FOLDS-1)+".")
+        if data_type not in ["train","val","test","test_full"]:
+            raise ValueError("Data type '"+data_type+"' not found.")
+            
         # Step 1. Piecewise Linear RUL labels
         apply_thres = data_type in ["train","val"]
         if apply_thres and self._R_EARLY is not None:
@@ -363,7 +373,7 @@ class DeepLSTM_Model(RULModel):
 
     def fit_model(self, 
                   verbose: bool=True
-                  )->list:
+                  )->None:
         """
             Fits each model to their respective training fold.
 
@@ -371,13 +381,11 @@ class DeepLSTM_Model(RULModel):
             ----------
             verbose : bool, default=True
                 Whether to display information on the fitting process.
-
-            Returns
-            -------
-            histories : list
-                The list of every model fitting.
         """
-        histories = []
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+            
+        self._hist = []
         for k in tqdm(range(self._FOLDS), desc="fitting models"):
             X_train, y_train = self._train_datasets["fold_data"][k], self._train_datasets["fold_labels"][k]
             X_val, y_val = self._val_datasets["fold_data"][k], self._val_datasets["fold_labels"][k]
@@ -393,8 +401,7 @@ class DeepLSTM_Model(RULModel):
                                     verbose=0,
                                     mode='min'),
                                  verbose=verbose)
-            histories.append(hist)
-        return histories
+            self._hist.append(hist)
 
     def get_hp_trial(self, 
                      dataloader, 
@@ -414,7 +421,7 @@ class DeepLSTM_Model(RULModel):
                 The evaluator object to compute the validation metric.
 
             data_load_path : str
-                The path to load the training and validation data.
+                The path to load the data.
 
             Returns
             ----------   
@@ -461,6 +468,9 @@ class DeepLSTM_Model(RULModel):
             path : str
                 The path to save the models.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+            
         for k in range(self._FOLDS):
             self._models[k].save_weights(path+'_model_'+str(k)+'.weights.h5')
 
@@ -475,6 +485,9 @@ class DeepLSTM_Model(RULModel):
             path : str
                 The path to save the models.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+            
         for k in range(self._FOLDS):
             load_path = path+"_model_"+str(k)+".weights.h5"
             self._models[k].load_weights(load_path)
@@ -490,8 +503,8 @@ class DeepLSTM_Model(RULModel):
                    is_unmasked: bool=False,
                   )->tuple:
         """
-            Returns 2 indices corresponding to the fold's idx-th unit.
-            Beware that because of data preprocess, the indices of time series do not correspond to the original units'.
+            Returns 2 indices to select the idx-th unit.
+            Beware that due to data preprocess, the indices of time series do not correspond to the original units'.
 
             Parameters
             ----------  

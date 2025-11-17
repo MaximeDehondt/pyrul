@@ -1,4 +1,5 @@
 # gcutcn.py
+
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
@@ -19,21 +20,21 @@ class GCUTCN_Model(RULModel):
     """
 
     def __init__(self,
-                 DATASET_NAME,
-                 FOLDS = None,
-                 VARS_TO_KEEP = None,
-                 NB_FEATURES = 32,
-                 WINDOW = 16,
-                 EPOCHS = 100,
-                 BATCH_SIZE = 256,
-                 LEARNING_RATE = 0.1,
-                 ONECLR_MOM_MIN = 0.85,
-                 ONECLR_MOM_MAX = 0.95,
-                 ONECLR_PHASE1_PCT = 0.3,
-                 ONECLR_DIV_FACTOR = 25.,
-                 SEGMENT_LEN = None,
-                 SEED=None
-                )->None:
+                 DATASET_NAME: str,
+                 FOLDS: int = None,
+                 VARS_TO_KEEP: list = None,
+                 NB_FEATURES: int = 32,
+                 WINDOW: int = 16,
+                 EPOCHS: int = 100,
+                 BATCH_SIZE: int = 256,
+                 LEARNING_RATE: float = 0.1,
+                 ONECLR_MOM_MIN: float = 0.85,
+                 ONECLR_MOM_MAX: float = 0.95,
+                 ONECLR_PHASE1_PCT: float = 0.3,
+                 ONECLR_DIV_FACTOR: float = 25.,
+                 SEGMENT_LEN: int = None,
+                 SEED: int = None
+                 )->None:
         """
             Parameters
             ----------
@@ -128,6 +129,9 @@ class GCUTCN_Model(RULModel):
             train_datasets : list
                 The transformed training datasets.
         """
+        if k<=-1 or k>=self._FOLDS:
+            raise ValueError("Invalid fold index. Allowed values range from 0 to "+str(self._FOLDS-1)+".")
+            
         df = df[self._VARS_TO_KEEP+["unit","RUL"]]
         
         if self._dataset_name=="femto":
@@ -173,7 +177,7 @@ class GCUTCN_Model(RULModel):
 
         new_df[cst_vars] = 0.
         new_df[non_cst_vars] = 2*(new_df[non_cst_vars] - df_train_min[non_cst_vars]) / (df_train_max[non_cst_vars] - df_train_min[non_cst_vars]) - 1
-        
+
         lengths = new_df.groupby("unit", sort=False).count()["RUL"].values
 
         return [new_df, y, lengths]
@@ -202,7 +206,12 @@ class GCUTCN_Model(RULModel):
             -------
             dataset : list
                 The transformed dataset.
-        """        
+        """
+        if k<-1 or k>=self._FOLDS:
+            raise ValueError("Invalid fold index. Allowed values range from -1 to "+str(self._FOLDS-1)+".")
+        if data_type not in ["train","val","test","test_full"]:
+            raise ValueError("Data type '"+data_type+"' not found.")
+            
         keep_last = data_type == "test"
         
         df = df[self._VARS_TO_KEEP+["unit","RUL"]]
@@ -322,9 +331,8 @@ class GCUTCN_Model(RULModel):
 
             w_all = self._feature_weights[k]
 
-            # Matrix initialization TODO!!!!!!!! : check if we can initialize the other dense layers of AMFE
+            # Matrix initialization
             first_layer_W_init = np.outer(w_all, np.ones(64)) # 64 is the chosen nb of neurons in the first dense layer
-                
             first_layer_bias_init = self._models[k].layers[0].linear1.weights[1]
             self._models[k].layers[0].linear1.set_weights([first_layer_W_init, first_layer_bias_init])
 
@@ -715,6 +723,9 @@ class GCUTCN_Model(RULModel):
             verbose : bool
                 Whether to display fitting information.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+            
         self._hist = []
         for k in tqdm(range(self._FOLDS), desc="fitting models"):
             X_train, y_train = self._train_datasets["fold_data"][k], self._train_datasets["fold_labels"][k]
@@ -754,7 +765,7 @@ class GCUTCN_Model(RULModel):
                 The evaluator object to compute the validation metric.
 
             data_load_path : str
-                The path to load the training and validation data.
+                The path to load the data.
 
             Returns
             ----------   
@@ -798,6 +809,10 @@ class GCUTCN_Model(RULModel):
             path : str
                 The path to save the models.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+
+        
         for k in range(self._FOLDS):
             self._models[k].save_weights(path+'_model_'+str(k)+'.weights.h5')
 
@@ -812,6 +827,9 @@ class GCUTCN_Model(RULModel):
             path : str
                 The path to save the models.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+
         for k in range(self._FOLDS):
             load_path = path+"_model_"+str(k)+".weights.h5"
             self._models[k].load_weights(load_path)
@@ -838,8 +856,8 @@ class GCUTCN_Model(RULModel):
                    data_type: str
                    )->tuple:
         """
-            Returns 2 indices corresponding to the fold's idx-th unit.
-            Beware that because of data preprocess, the indices of time series do not correspond to the original units'.
+            Returns 2 indices to select the idx-th unit.
+            Beware that due to data preprocess, the indices of time series do not correspond to the original units'.
 
             Parameters
             ----------  

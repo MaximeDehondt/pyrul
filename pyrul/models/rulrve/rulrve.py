@@ -1,5 +1,6 @@
 # rulrve.py
 # Code mostly taken from https://github.com/NahuelCostaCortez/Remaining-Useful-Life-Estimation-Variational
+
 import numpy as np
 import pandas as pd
 import glob
@@ -19,16 +20,17 @@ useful life estimation" (Nahuel Costa, 2022)
     """
 
     def __init__(self, 
-                 DATASET_NAME,
-                 FOLDS = None,
-                 VARS_TO_KEEP = None,
-                 WINDOW = 30,
-                 ALPHA = 0.1,
-                 R_EARLY = 130,
-                 LEARNING_RATE = 1e-3,
-                 BATCH_SIZE = 128,
-                 MAX_EPOCHS = 10000,
-                 SEED = None):
+                 DATASET_NAME: str,
+                 FOLDS: int = None,
+                 VARS_TO_KEEP: list = None,
+                 WINDOW: int = 30,
+                 ALPHA: float = 0.1,
+                 R_EARLY: float = 130,
+                 LEARNING_RATE: float = 1e-3,
+                 BATCH_SIZE: int = 128,
+                 MAX_EPOCHS: int = 10000,
+                 SEED: int = None
+                 )->None:
         """
             DATASET_NAME : str
                 The name of the dataset to use.
@@ -45,7 +47,7 @@ useful life estimation" (Nahuel Costa, 2022)
             ALPHA : float, default=0.1
                 The exponentially moving average smoothing alpha parameter.
 
-            R_EARLY : int, default=130
+            R_EARLY : float, default=130
                 The RUL threshold to apply to the train and validation labels. If None, no threshold is applied.
 
             LEARNING_RATE : float, default=1e-3
@@ -106,6 +108,9 @@ useful life estimation" (Nahuel Costa, 2022)
             train_datasets : list
                 The transformed training datasets.
         """
+        if k<=-1 or k>=self._FOLDS:
+            raise ValueError("Invalid fold index. Allowed values range from 0 to "+str(self._FOLDS-1)+".")
+            
         if self._dataset_name=="femto":
             df['op_cond'] = df["condition"].astype(str)
         else:
@@ -153,6 +158,11 @@ useful life estimation" (Nahuel Costa, 2022)
             dataset : list
                 The transformed dataset.
         """
+        if k<-1 or k>=self._FOLDS:
+            raise ValueError("Invalid fold index. Allowed values range from -1 to "+str(self._FOLDS-1)+".")
+        if data_type not in ["train","val","test","test_full"]:
+            raise ValueError("Data type '"+data_type+"' not found.")
+            
         apply_thres = data_type in ["train","val"]
         keep_last = data_type == "test"
         
@@ -406,6 +416,9 @@ useful life estimation" (Nahuel Costa, 2022)
             path : str
                 The path to save the models.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+            
         for k in range(self._FOLDS):
             self._models[k].save_weights(path+'_model_'+str(k)+'.weights.h5')
 
@@ -420,6 +433,9 @@ useful life estimation" (Nahuel Costa, 2022)
             path : str
                 The path to load the models.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+
         for k in range(self._FOLDS):
             load_path = path+"_model_"+str(k)+".weights.h5"
             self._models[k].load_weights(load_path)
@@ -434,18 +450,13 @@ useful life estimation" (Nahuel Costa, 2022)
             ----------
             verbose : bool, default=True
                 Whether to display information on the fitting process.
-
-            Returns
-            -------
-            histories : list
-                The list of every model fitting.
         """
         # LR finder
         learning_rate = self.find_lr()
         for k in range(self._FOLDS):
             self._models[k].optimizer.learning_rate.assign(learning_rate)
             
-        histories = []
+        self._hist = []
         for k in tqdm(range(self._FOLDS), desc="fitting models"):
             X_train, y_train = self._train_datasets["fold_data"][k], self._train_datasets["fold_labels"][k]
             X_val, y_val = self._val_datasets["fold_data"][k], self._val_datasets["fold_labels"][k]
@@ -470,12 +481,10 @@ useful life estimation" (Nahuel Costa, 2022)
                                  shuffle=True,
                                  callbacks=model_callbacks,
                                  verbose=verbose)
-            histories.append(hist)
+            self._hist.append(hist)
 
         # Loading best checkpoints in memory
         self.load_models(path='RULRVE_model_checkpoints/RULRVE')
-        
-        return histories
 
     def find_lr(self)->float:
         """
@@ -516,7 +525,7 @@ useful life estimation" (Nahuel Costa, 2022)
                 The evaluator object to compute the validation metric.
 
             data_load_path : str
-                The path to load the training and validation data.
+                The path to load the data.
 
             Returns
             ----------   
@@ -552,9 +561,8 @@ useful life estimation" (Nahuel Costa, 2022)
                    data_type: str
                    )->tuple:
         """
-            Returns 2 indices corresponding to the fold's idx-th unit.
-            Beware that because of data preprocess, the index of time series do not correspond
-            to the original units' index.
+            Returns 2 indices to select the idx-th unit.
+            Beware that due to data preprocess, the indices of time series do not correspond to the original units'.
 
             Parameters
             ----------  
@@ -572,6 +580,9 @@ useful life estimation" (Nahuel Costa, 2022)
             slice_inf, slice_sup : tuple
                 The indices to select the desired unit.
         """
+        if data_type not in ["train","val","test","test_full"]:
+            raise ValueError("Data type '"+data_type+"' not found.")
+            
         if data_type=="test":
             return idx, idx+1
         else:

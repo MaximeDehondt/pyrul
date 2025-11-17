@@ -1,8 +1,9 @@
+# base.py
+# The RULModel class template.
+
 from abc import ABC, abstractmethod
 import numpy as np
 import pandas as pd
-import random
-import time
 import optuna
 
 from pyrul.utils.file import clear_tmp_plots, SamplerStateSaveCallback, SaveBestDataOnly
@@ -16,7 +17,7 @@ class RULModel(ABC):
     def __init__(self, 
                  dataset_name,
                  dataset_ori,
-                 folds, 
+                 folds=None, 
                  seed=None,
                  is_ibl=False,
                  is_pred_masked=False,
@@ -31,17 +32,17 @@ class RULModel(ABC):
             dataset_ori : str
                 The original name of the dataset the model was designed with.
 
-            folds : int
+            folds : int, default=None
                 The number of folds for k-fold split. If None, uses the default values depending on dataset_name.
 
             is_ibl : bool, default=False
-                Whether the model is an instance based learning one. For these models only predict the last RUL value of a given trajectory.
+                Whether the model is an instance based learning one. These models only predict the last RUL value of a given trajectory (seq2one).
 
             is_deep_lstm : bool, default=False
-                Whether the model is a sequence-to-sequence model with masked labels.
+                Whether the model is a sequence-to-sequence model with masked labels (masked seq2seq).
 
-            is_rul_normalized ! bool, default=False
-                Whether the RUL labels are normalized to [0;1] individually.
+            is_rul_normalized : bool, default=False
+                Whether the RUL labels are normalized.
 
             seed : int
                 The seed, default=None.
@@ -59,6 +60,8 @@ class RULModel(ABC):
         self._val_datasets = None
         self._test_dataset = None
         self._test_full_dataset = None
+
+        # Models
         self._models = None
 
         # Model specific attributes
@@ -74,8 +77,6 @@ class RULModel(ABC):
     def data_process_local_fit_and_transform(self, 
                                              df: pd.DataFrame, 
                                              k: int,
-                                             keep_last,
-                                             **kwargs,
                                              )->list:
         """
             Fits the preprocessing pipeline to the training dataset of the current fold.
@@ -88,12 +89,6 @@ class RULModel(ABC):
             k : int
                 The index of the fold associated to the dataset df.
 
-            keep_last : bool
-                Whether to keep the last sample for each unit.
-
-            **kwargs : dict
-                Optional. Model-specific arguments.
-
             Returns
             -------
             train_datasets : list
@@ -105,8 +100,7 @@ class RULModel(ABC):
     def data_process_local_transform(self, 
                                      df: pd.DataFrame,
                                      k: int,
-                                     keep_last: bool,
-                                     **kwargs: dict
+                                     data_type: str
                                      )->list:
         """
             Transforms the given dataset using the training data' metrics.
@@ -120,11 +114,8 @@ class RULModel(ABC):
                 The index of the fold associated to the training data' metrics.
                 If k == -1, uses the already computed average training data' metrics.
 
-            keep_last : bool
-                Whether to keep the last sample for each unit or not.
-
-            **kwargs : dict
-                Optional. Model-specific arguments.
+            data_type : str
+                The data type. Is either "train", "val", "test" or "test_full".
 
             Returns
             -------
@@ -160,7 +151,7 @@ class RULModel(ABC):
     @abstractmethod
     def data_process_global_transform(self, 
                                       datasets: list, 
-                                      is_folded: bool
+                                      data_type: str,
                                       )->dict:
         """
             Transforms the given datasets using all training folds.
@@ -171,8 +162,8 @@ class RULModel(ABC):
             datasets : dict or list
                 The datasets to transform.
 
-            is_folded : bool
-                Whether the data is folded or not.
+            data_type : str
+                The data type. Is either "train", "val", "test" or "test_full".
 
             Returns
             ----------
@@ -207,35 +198,30 @@ class RULModel(ABC):
             path : str
                 The path to load the datasets's metrics.
         """
+        pass
 
     @abstractmethod
     def compute_avg_local_metrics(self)->None:
         """
             Uses all local data metrics computed from each fold during the creation of the training and validation datasets, to compute an average local metric information.
         """
+        pass
 
     ###############################################################
     ##################### MODEL CREATION ##########################
     ###############################################################
 
     @abstractmethod
-    def build_model(self):
+    def build_model(self)->None:
         """
             Instanciates a model for each fold.
         """
         pass
 
     @abstractmethod
-    def fit_model(self, 
-                  verbose: bool=True
-                  ):
+    def fit_model(self)->None:
         """
             Fits each model to their respective training fold.
-
-            Parameters
-            ----------
-            verbose : bool, default=True
-                Whether to display information on the fiting process.
         """
         pass
 
@@ -246,7 +232,7 @@ class RULModel(ABC):
                 is_test: bool=False,
                 )->np.array:
         """
-            Returns the prediction associated to the input x, for the idxK-th model.
+            Returns the prediction associated to the input x, for the k-th model.
             If k==-1, a list of all model predictions is returned, or the average of it
             depending on do_mean.
 
@@ -258,7 +244,7 @@ class RULModel(ABC):
             k : int
                 The index of the model to use.
     
-            do_mean : bool
+            do_mean : bool, default=True
                 Whether to get the average prediction in the case of getting predictions from all models.
 
             is_test : bool, default=False
@@ -269,20 +255,44 @@ class RULModel(ABC):
             preds : np.array
                 The model's RUL predictions.
         """
-        if k!=-1:
-            return self._models[k].predict(x)
+        if k<-1 or k>self._FOLDS:
+            raise ValueError("The given fold index is invalid. Possible values are from -1 to",self._FOLDS,". Received k=",k)
         else:
-            preds = [self._models[k].predict(x) for k in range(self._FOLDS)]
-            if do_mean:
-                return np.mean(preds, axis=0)
+            if k!=-1:
+                return self._models[k].predict(x)
             else:
-                return preds
+                preds = [self._models[k].predict(x) for k in range(self._FOLDS)]
+                if do_mean:
+                    return np.mean(preds, axis=0)
+                else:
+                    return preds
 
     @abstractmethod
     def get_hp_trial(self, 
-                     dataloader,
+                     dataloader, 
                      evaluator,
-                     **kwargs):
+                     data_load_path: str,
+                     **kwargs
+                     )->callable:
+        """
+            Returns the function to call to run the trial of the hyperparameter search.
+
+            Parameters
+            ----------            
+            dataloader : DataLoader
+                The dataloader object.
+
+            evaluator : Evaluator
+                The evaluator object to compute the validation metric.
+
+            data_load_path : str
+                The path to load the data.
+
+            Returns
+            ----------   
+            hp_trial : callable
+                The function to call for the study.
+        """
         pass
 
     def run_hp_search(self,
@@ -300,10 +310,11 @@ class RULModel(ABC):
                       **kwargs: dict
                       )->optuna.study.Study:
         """
-            Runs a hyperparameter search over 30 trials using the given sampler.
+            Runs a hyperparameter search over n_trials trials using the given sampler.
             The search is saved in a database.
             Calling this function while a study database already exists at the saving location
-            will resume the study. The sampler's inner state is also saved after each trial.            
+            will resume the study. The sampler's inner state is also saved after each trial.
+            best_trial_idx should be manually updated when resuming a study. 
 
             Parameters
             ----------
@@ -317,7 +328,7 @@ class RULModel(ABC):
                 The name of the study.
 
             data_load_path : str
-                The path to load the training and validation data.
+                The path to load the data.
 
             best_data_save_path : str
                 The path to save the best model's datasets.
@@ -381,7 +392,7 @@ class RULModel(ABC):
             Parameters
             ----------
             dataset : list
-                The dataset.
+                The dataset list containing the features "X", the labels "y" and the original unit lengths "lengths".
 
             is_folded : bool
                 Whether the dataset comes from K-fold.
@@ -408,13 +419,38 @@ class RULModel(ABC):
             return dataset
     
     @abstractmethod
-    def get_slices(self):
+    def get_slices(self, 
+                   idx: int, 
+                   lengths: list,
+                   data_type: str
+                   )->tuple:
+        """
+            Returns 2 indices to select the idx-th unit.
+            Beware that due to data preprocess, the indices of time series do not correspond to the original units'.
+
+            Parameters
+            ----------  
+            idx : int
+                The index of the fold's original time series. 
+
+            lengths : list
+                Lengths of each unit.
+
+            data_type : str
+                Is either "train", "val", "test" or "test_full".
+
+            Returns
+            ----------
+            slice_inf, slice_sup : tuple
+                The indices to select the desired unit.
+        """
         pass
 
     @abstractmethod
     def get_cycles(self, 
                    length: int,
-                   is_test: bool):
+                   is_test: bool
+                   )->np.array:
         """
             Returns the cycles associated to the trajectory's unit given its length.
 
@@ -424,7 +460,39 @@ class RULModel(ABC):
                 The length of the trajectory of the related unit.
 
             is_test : bool
-                Whether the trajectory is in the test dataset or not.
+                Whether the trajectory is in the full test dataset or not.
+
+            Returns
+            ----------
+            cycles : np.array
+                The time steps associated to the unit.
+        """
+        pass
+        
+    @abstractmethod
+    def save_hp_values(self,
+                       path: str
+                       )->None:
+        """
+            Saves the current hyperparameter values in a csv file.
+
+            Parameters
+            ----------
+            path : str
+                The path to save the hyperparameter values.
         """
         pass
 
+    @abstractmethod
+    def save_config(self,
+                    path: str
+                    )->None:
+        """
+            Saves the attribute values of the model in a csv file, and indicates which one has been tuned.
+
+            Parameters
+            ----------
+            path : str
+                The path to save the hyperparameter values.
+        """
+        pass

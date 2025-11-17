@@ -1,4 +1,5 @@
 # lr.py
+
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
@@ -19,7 +20,7 @@ class LR_Model(RULModel):
                  FOLDS: int = None,
                  VARS_TO_KEEP: list = None,
                  WINDOW: int = 30,
-                 R_EARLY: int = None,
+                 R_EARLY: float = None,
                  SEED: int = None
                 )->None:
         """
@@ -82,6 +83,9 @@ class LR_Model(RULModel):
             train_datasets : list
                 The transformed training datasets.
         """
+        if k<=-1 or k>=self._FOLDS:
+            raise ValueError("Invalid fold index. Allowed values range from 0 to "+str(self._FOLDS-1)+".")
+        
         # Z-norm     
         self._df_train_means[k] = df[self._VARS_TO_KEEP].mean()
         self._df_train_stds[k] = df[self._VARS_TO_KEEP].std()
@@ -113,6 +117,11 @@ class LR_Model(RULModel):
             dataset : list
                 The transformed dataset.
         """
+        if k<-1 or k>=self._FOLDS:
+            raise ValueError("Invalid fold index. Allowed values range from -1 to "+str(self._FOLDS-1)+".")
+        if data_type not in ["train","val","test","test_full"]:
+            raise ValueError("Data type '"+data_type+"' not found.")
+            
         keep_last = data_type == "test"
         apply_thres = data_type in ["train","val"]
 
@@ -304,6 +313,9 @@ class LR_Model(RULModel):
         """
             Fits each model to their respective training fold.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+        
         for k in tqdm(range(self._FOLDS), desc="fitting models"):
             X_train, y_train = self._train_datasets["fold_data"][k], self._train_datasets["fold_labels"][k]
             self._models[k].fit(X=X_train, y=y_train)
@@ -326,7 +338,7 @@ class LR_Model(RULModel):
                 The evaluator object to compute the validation metric.
 
             data_load_path : str
-                The path to load the training and validation data.
+                The path to load the data.
 
             Returns
             ----------   
@@ -368,6 +380,9 @@ class LR_Model(RULModel):
             path : str
                 The path to save the models.
         """
+        if self._models is None:
+            raise Exception("No models found. Call model.build_model() before.")
+            
         for k in range(self._FOLDS):
             with open(path+'_model_'+str(k)+'.pkl', 'wb') as f:
                 pickle.dump(self._models[k], f)
@@ -382,7 +397,7 @@ class LR_Model(RULModel):
             ----------
             path : str
                 The path to load the models.
-        """
+        """            
         self._models = []
         for k in range(self._FOLDS):
             with open(path+'_model_'+str(k)+'.pkl', 'rb') as f:
@@ -394,19 +409,19 @@ class LR_Model(RULModel):
 
     def get_slices(self, 
                    idx: int, 
-                   lengths: np.array,
+                   lengths: list,
                    data_type: str
                    )->tuple:
         """
-            Returns 2 indices corresponding to the fold's idx-th unit.
-            Beware that because of data preprocess, the indices of time series do not correspond to the original units'.
+            Returns 2 indices to select the idx-th unit.
+            Beware that due to data preprocess, the indices of time series do not correspond to the original units'.
 
             Parameters
             ----------  
             idx : int
                 The index of the fold's original time series. 
 
-            lengths : np.array
+            lengths : list
                 Lengths of each unit.
 
             data_type : str
@@ -417,6 +432,9 @@ class LR_Model(RULModel):
             slice_inf, slice_sup : tuple
                 The indices to select the desired unit.
         """
+        if data_type not in ["train","val","test","test_full"]:
+            raise ValueError("Data type '"+data_type+"' not found.")
+            
         if data_type=="test":
             return idx, idx+1
         else:
@@ -450,7 +468,7 @@ class LR_Model(RULModel):
                        path: str
                        )->None:
         """
-            Saves the current hyperparameter values.
+            Saves the current hyperparameter values in a csv file.
 
             Parameters
             ----------
@@ -464,7 +482,6 @@ class LR_Model(RULModel):
     def save_config(self,
                     path: str
                     )->None:
-        
         """
             Saves the attribute values of the model in a csv file, and indicates which one has been tuned.
 

@@ -1,5 +1,6 @@
 # evaluation.py
 # To assess the performances of the RUL prediction models.
+
 import numpy as np
 import pandas as pd
 from .metrics import *
@@ -10,19 +11,17 @@ class Evaluator():
     """
         A class to get the performances of the RUL prediction models.
     """
-    def __init__(self, 
-                 metrics: list):
+    def __init__(self, metrics: list):
         """
             Parameters
             ----------
             metrics : list of str
                 The names of all of the metrics to consider. 
-                It is possible to specify if thresholded, non-thresholed or all data should be looked at.
-                The phase to study can be specified before the metric name.
+                It is possible to specify if thresholded or non-thresholed data should be looked at.
+                The phase to study can be specified before the metric name with "phase0_" for thresholded data, and "phase1_" for non-thresholded data.
                 Eg: "phase1_rmse" to evaluate the root mean squared error on non-thresholded data.
-                
-                Note : New metrics should be referenced here.
         """
+        # Note : New metrics should be referenced here.
         dict_fun = dict({"rmse": Metric_RMSE, 
                          "mae": Metric_MAE, 
                          "scoring_cmapss": Metric_Scoring_CMAPSS, 
@@ -101,28 +100,61 @@ class Evaluator():
                 Metric values of the desired model for the given data.
                 
         """
-        if model._is_ibl and data_type=="test_full": # To avoid unecessary calls to predict() for IBL models since test_full is same as test for them
-            return [np.nan for _ in self._metrics.values()]
+        # if model._is_ibl and data_type=="test_full": # To avoid unecessary calls to predict() for IBL models since test_full is same as test for them
+        #     return [np.nan for _ in self._metrics.values()]
 
-        y = tensor_to_numpy(y)
-        if model._is_deep_lstm:
-            y = y[:,:,0]
-
+        # Step 1. Checking whether to compute or load predictions
         if load_pred_path is not None:
             y_pred = np.loadtxt(fname=load_pred_path+"_pred.txt", delimiter=",")
-
+ 
         else:
-            # Calling model.predict()
-            is_test = data_type in ["test", "test_full"]
-            y_pred = model.predict(X, k, is_test=is_test)
-            y_pred = tensor_to_numpy(y_pred)
-            if model._is_deep_lstm:
-                y_pred = y_pred[:,:,0]
+            if model._is_ibl and data_type == "test_full": # Full test prediction for IBL models, on test data
+                y_pred = model.predict(X, -1, is_test=True, do_full_pred=True)
+                
+            else: # Regular model.predict() for other models
+                is_test = data_type in ["test", "test_full"]
+                y_pred = model.predict(X, k, is_test=is_test)
+                y_pred = tensor_to_numpy(y_pred)
+                if model._is_deep_lstm:
+                    y_pred = y_pred[:,:,0]
             
         if save_pred_path is not None:
             np.savetxt(X=y_pred, fname=save_pred_path+"_pred.txt", delimiter=",")
 
-        # Calling function evaluation for each metric
+        # Step 2. Formatting y and y_pred depending on the model
+        if model._is_ibl:
+            if data_type == "test_full":
+                y = np.concatenate([traj[model._MIN_TS_SIZE-1:] for traj in y])
+            else:
+                y = np.array([traj[-1] for traj in y])
+                
+        elif model._is_deep_lstm:
+            y = y[:,:,0]
+            #y_pred = y_pred[:,:,0]
+
+            if data_type=="test":
+                y = np.array([y[i][lengths[i]-1] for i in range(len(lengths))])
+                y_pred = np.array([y_pred[i][lengths[i]-1] for i in range(len(lengths))])
+
+            else:
+                mask = y!=-1.
+                y, y_pred = y[mask], y_pred[mask] # masking flattens array
+
+            y = tensor_to_numpy(y)
+            y_pred = tensor_to_numpy(y_pred)
+            
+        else:
+            y = tensor_to_numpy(y)
+            if y.ndim==2:
+                y = y[:,0]
+            if y_pred.ndim==2:
+                y_pred = y_pred[:,0]
+
+        #if model._is_rul_normalized: # UNUSED
+        #    y = model.denorm(y, data_type, k, lengths)
+        #    y_pred = model.denorm(y_pred, data_type, k, lengths)
+
+        # Step 3. Calling function evaluation for each metric
         res = [fun(y_true=y, 
                    y_pred=y_pred,
                    lengths=lengths, 

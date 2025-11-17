@@ -106,7 +106,9 @@ def plot_pred(model: RULModel,
               model_indices: list,  
               save_path: str=None, 
               apply_threshold: bool=False,
-              load_pred_path: str=None):
+              load_pred_paths: list=None,
+              xlims: list=None,
+              ylims: list=None):
     """
         For each given indices, plots the prediction of the desired model(s) on the specified dataset.
 
@@ -132,10 +134,23 @@ def plot_pred(model: RULModel,
         apply_threshold : bool, default=False
             Whether to apply the threshold on the true labels, if not already done.
 
-        load_pred_path : str, default=None
-            If not None, the path to load the predictions will be used instead of calling model.predict().
+        load_pred_paths : list of str, default=None
+            If not None, the path to load the predictions (for each unit) will be used instead of calling model.predict().
+
+        xlims : list of tuple of int, default=None
+            The x limits of the plots for each unit.
+
+        ylims : list of tuple of int, default=None
+            The y limits of the plots for each unit.
     """
-    # Visualisation of 1 prediction
+    if load_pred_paths is None:
+        load_pred_paths = [None]*len(plot_indices)
+    if xlims is None:
+        xlims = [None]*len(plot_indices)
+    if ylims is None:
+        ylims = [None]*len(plot_indices)
+    
+    # Step 1. Loading data from model
     if data_name=="train":
         ds = model._train_datasets
     elif data_name=="val":
@@ -145,10 +160,10 @@ def plot_pred(model: RULModel,
     else:
         raise ValueError("Data type not found. Allowed values are 'train', 'val', and 'test_full'.")
     
-    for k1, k2, idx in zip(model_indices, fold_indices, plot_indices):
+    for k1, k2, idx, l_path, xlim, ylim in zip(model_indices, fold_indices, plot_indices, load_pred_paths, xlims, ylims):
     # Note : idx no longer corresponds to the same initial sample before k-fold
 
-        # Getting the data samples
+        # Step 2. Getting the data samples for the desired unit
         if data_name in ["test_full","test_full_ind"]:
             slice_inf, slice_sup = model.get_slices(idx, ds["lengths"], data_type="test_full")
             x = ds["data"]
@@ -161,17 +176,26 @@ def plot_pred(model: RULModel,
         x = x[slice_inf:slice_sup]
         y = y[slice_inf:slice_sup]
 
-        # Loading or Computing predictions
-        if load_pred_path is not None:
-            y_pred = np.loadtxt(fname=load_pred_path+"_pred.txt", delimiter=",")[slice_inf:slice_sup]
-            y, y_pred = tensor_to_numpy(y), tensor_to_numpy(y_pred)
+        # Step 3. Loading or Computing predictions
+        if l_path is not None:
+            y_pred = np.loadtxt(fname=l_path+"_pred.txt", delimiter=",")
+
+            if model._is_ibl and data_name in ["test_full","test_full_ind"]:
+                a, b = model.get_slices(idx, ds["lengths"], data_type="test_full", is_pred_rul_compressed=True)
+                y = y[0]
+                y_pred = y_pred[a:b]
+                y = np.array(y[model._MIN_TS_SIZE-1:])
+            else:
+                y_pred = y_pred[slice_inf:slice_sup]
+                y, y_pred = tensor_to_numpy(y), tensor_to_numpy(y_pred)
 
             if model._is_deep_lstm:
                 y = y[:,:,0]
                 mask = y!=-1.
                 y, y_pred = y[mask], y_pred[mask]
-                
+
             y, y_pred = y.ravel(), y_pred.ravel()
+            
         else:
             if model._is_ibl:
                 # For a model that predicts the last RUL value at a desired time,
@@ -197,19 +221,23 @@ def plot_pred(model: RULModel,
         if apply_threshold:
             y = np.minimum(y, model._R_EARLY)
 
-        # Getting the cycles
+        # Step 4. Getting the cycles of the unit
         if data_name in ["test_full","test_full_ind"]:
             cycles = model.get_cycles(length=ds["lengths"][idx], is_test=True)
         else:
             cycles = model.get_cycles(length=ds["fold_lengths"][k1][idx], is_test=False)
-       
-        # Plotting
+
+        # Step 5. Plotting
         plt.plot(cycles, y_pred, label="pred")
         plt.plot(cycles, y, label="truth")
         plt.legend()
         plt.grid()
         plt.xlabel("cycles")
         plt.ylabel("RUL")
+        if xlim is not None:
+            plt.xlim(xlim)
+        if ylim is not None:
+            plt.ylim(ylim)
 
         if save_path:
             path = save_path+"model_"+str(k1)+"_fold_"+str(k2)+"_pred_"+data_name+"_ts_"+str(idx)+".png"
