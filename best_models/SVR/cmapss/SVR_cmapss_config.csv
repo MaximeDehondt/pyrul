@@ -1,0 +1,10 @@
+,parameter,value,is_tuned
+0,DATASET_NAME,cmapss_fd001,False
+1,FOLDS,10,False
+2,VARS_TO_KEEP,"['T24', 'T30', 'T50', 'Nf', 'Ps30']",False
+3,WINDOW,30,True
+4,SG_WINDOW,31,True
+5,GAMMA,28.77,True
+6,C,1000,True
+7,EPSILON,0.99,True
+8,SEED,7841329,False
