@@ -1,0 +1,12 @@
+,parameter,value,is_tuned
+0,DATASET_NAME,cmapss_fd001,False
+1,FOLDS,10,False
+2,VARS_TO_KEEP,"['T24', 'T30', 'T50', 'P30', 'Nf', 'Nc', 'Ps30', 'phi', 'NRf', 'NRe', 'BPR', 'htBleed', 'W31', 'W32']",False
+3,SEGMENT_LEN,1,False
+4,LEARNING_RATE,0.3,True
+5,N_ESTIMATORS,10,False
+6,MIN_SAMPLES_SPLIT,58,True
+7,MIN_SAMPLES_LEAF,100,True
+8,MAX_DEPTH,5,True
+9,WINDOW,5,False
+10,SEED,7841329,False
