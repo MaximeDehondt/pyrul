@@ -1,0 +1,17 @@
+,parameter,value,is_tuned
+0,DATASET_NAME,cmapss_fd001,False
+1,FOLDS,10,False
+2,VARS_TO_KEEP,"['T24', 'T30', 'T50', 'P30', 'Nf', 'Nc', 'Ps30', 'phi', 'NRf', 'NRe', 'BPR', 'htBleed', 'W31', 'W32']",False
+3,R_EARLY,130,False
+4,MIN_TS_SIZE,31,False
+5,WINDOW,20,True
+6,SLIDING_STEP,10,False
+7,GF_SIGMA,4.13,True
+8,ALPHA,0.0,True
+9,BETA,252,True
+10,LAMBDA1,542,True
+11,LAMBDA2,953,True
+12,DELTA_W,0,True
+13,K,1,True
+14,KERNEL_BANDWIDTH,1,False
+15,SEED,7841329,False
