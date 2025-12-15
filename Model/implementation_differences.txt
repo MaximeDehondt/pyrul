@@ -1,0 +1,31 @@
+While the pyrul benchmark attempts to reimplement models as close as possible to the initial works, there are differences that are the results of different compromises.
+We list the following differences for each model below:
+
+- SVR : 
+    - Test predictions should be an average of all past RUL predictions, for each unit
+
+- DSCNN : 
+    - Skip-connection was considered as an identity-connection when dimensionally possible
+    - RUL was initially normalized
+
+- DeepLSTM :
+    - Dropout(s) location(s) are unknown so assumed almost everywhere
+
+- MLS : 
+    - The future bias weight is unclearly defined in specific scenarios
+
+- TSBPDTW :
+    - Given code was followed, although it deviates from paper
+
+- GBT : 
+    - Window size and the number of estimators for CMAPSS are limited to low values for computational reasons
+
+- GCUTCN :
+    - RUL was initially normalized
+    - To avoid fast model divergence, OneCycleLR was disabled
+    - The metrics' weights were initially set manually, but the work proposed an automatic method we chose
+    - For CMAPSS, no features were removed in our implementation
+
+- DAST :
+    - RUL was initially normalized
+    - Given code was followed, although it deviates from paper

@@ -1,0 +1,21 @@
+The general framework to create, build and train a RULModel goes through the following functions:
+
+- model = ...
+- dataloader = ...
+- dataloader.build_train_val_data()
+- model.build_model()
+- model.fit_model()
+- model.save_models()
+...
+
+However, because of specific data processing steps such as feature wrapper selection, the previous order may be slightly different.
+This fundamentally depends on the chosen RULModel. Below are given the specificities of RULModels that do not respect the general order:
+
+- SVR, GBT : uses feature wrapper selection
+- Consequence : calling build_train_val_data() calls model.build_model() and model.fit_model(), so the training is done after the first function returns.
+
+- GCUTCN : initializes the first layer with data-dependent values
+- Consequence : calling build_train_val_data() calls model.build_model(), so model.fit_model() should be called directly after the first function returns.
+
+- MLS, TSBPDTW : are instanced-based-learning models
+- Consequence : there are no core parameters to fit, so model.save_models() or model.load_models() are useless, only the train datasets should be saved and loaded.
