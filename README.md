@@ -1,3 +1,5 @@
+![Alt text](pyrul_bandroll.png?raw=true)
+
 # pyrul : Remaining Useful Life Benchmark
 
 pyrul is a local Python library for remaining useful life (RUL) estimation benchmarking on CMAPSS FD001.
