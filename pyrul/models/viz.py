@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from pyrul.models.base import RULModel
 from pyrul.utils.various import tensor_to_numpy
+from matplotlib.ticker import MaxNLocator
 
 def plot_full_rul_pred(y, y_pred, cycles, save_path):
         
@@ -100,7 +101,7 @@ def plot_loss(histories, save_path: str, log_scale: bool=False):
             plt.show()
 
 def plot_pred(model: RULModel, 
-              data_name: str,
+              data_type: str,
               plot_indices: list, 
               fold_indices: list,
               model_indices: list,  
@@ -108,21 +109,22 @@ def plot_pred(model: RULModel,
               apply_threshold: bool=False,
               load_pred_paths: list=None,
               xlims: list=None,
-              ylims: list=None):
+              ylims: list=None,
+              yticks: list=None):
     """
         For each given indices, plots the prediction of the desired model(s) on the specified dataset.
 
         model : RULModel
             The prediction model.
 
-        data_name : str
+        data_type : str
             The dataset to choose. Is either "train", "val", "test_full" or "test_full_ind" (for individual fold prediction on full test data).
 
         plot_indices : list of ints
             The list of unit indices to choose from the dataset.
 
         fold_indices : list of ints
-            The list of fold indices to choose from the dataset. Should be -1 if data_name=="test_full".
+            The list of fold indices to choose from the dataset. Should be -1 if data_type=="test_full".
 
         model_indices : list of ints
             The list of model indices to choose for the predictions. 
@@ -135,13 +137,16 @@ def plot_pred(model: RULModel,
             Whether to apply the threshold on the true labels, if not already done.
 
         load_pred_paths : list of str, default=None
-            If not None, the path to load the predictions (for each unit) will be used instead of calling model.predict().
+            Optional. If not None, the path to load the predictions (for each unit) will be used instead of calling model.predict().
 
         xlims : list of tuple of int, default=None
-            The x limits of the plots for each unit.
+            Optional. The x limits of the plots for each unit.
 
         ylims : list of tuple of int, default=None
-            The y limits of the plots for each unit.
+            Optional. The y limits of the plots for each unit.
+
+        yticks : list of list of floats, default=None
+            Optional. If not None, adjusts the plots to each desired yticks. Specified yticks must be in the range of respective ylims.
     """
     if load_pred_paths is None:
         load_pred_paths = [None]*len(plot_indices)
@@ -149,22 +154,24 @@ def plot_pred(model: RULModel,
         xlims = [None]*len(plot_indices)
     if ylims is None:
         ylims = [None]*len(plot_indices)
+    if yticks is None:
+        yticks = [None]*len(plot_indices)
     
     # Step 1. Loading data from model
-    if data_name=="train":
+    if data_type=="train":
         ds = model._train_datasets
-    elif data_name=="val":
+    elif data_type=="val":
         ds = model._val_datasets
-    elif data_name in ["test_full","test_full_ind"]:
+    elif data_type in ["test_full","test_full_ind"]:
         ds = model._test_full_dataset
     else:
         raise ValueError("Data type not found. Allowed values are 'train', 'val', and 'test_full'.")
     
-    for k1, k2, idx, l_path, xlim, ylim in zip(model_indices, fold_indices, plot_indices, load_pred_paths, xlims, ylims):
+    for k1, k2, idx, l_path, xlim, ylim, ytick in zip(model_indices, fold_indices, plot_indices, load_pred_paths, xlims, ylims, yticks):
     # Note : idx no longer corresponds to the same initial sample before k-fold
 
         # Step 2. Getting the data samples for the desired unit
-        if data_name in ["test_full","test_full_ind"]:
+        if data_type in ["test_full","test_full_ind"]:
             slice_inf, slice_sup = model.get_slices(idx, ds["lengths"], data_type="test_full")
             x = ds["data"]
             y = ds["labels"]
@@ -180,7 +187,7 @@ def plot_pred(model: RULModel,
         if l_path is not None:
             y_pred = np.loadtxt(fname=l_path+"_pred.txt", delimiter=",")
 
-            if model._is_ibl and data_name in ["test_full","test_full_ind"]:
+            if model._is_ibl and data_type in ["test_full","test_full_ind"]:
                 a, b = model.get_slices(idx, ds["lengths"], data_type="test_full", is_pred_rul_compressed=True)
                 y = y[0]
                 y_pred = y_pred[a:b]
@@ -222,25 +229,30 @@ def plot_pred(model: RULModel,
             y = np.minimum(y, model._R_EARLY)
 
         # Step 4. Getting the cycles of the unit
-        if data_name in ["test_full","test_full_ind"]:
+        if data_type in ["test_full","test_full_ind"]:
             cycles = model.get_cycles(length=ds["lengths"][idx], is_test=True)
         else:
             cycles = model.get_cycles(length=ds["fold_lengths"][k1][idx], is_test=False)
 
         # Step 5. Plotting
-        plt.plot(cycles, y_pred, label="pred")
-        plt.plot(cycles, y, label="truth")
-        plt.legend()
-        plt.grid()
-        plt.xlabel("cycles")
-        plt.ylabel("RUL")
+        plt.plot(cycles, y_pred, label=r'$\mathbf{\hat{y}}$', linewidth=3)
+        plt.plot(cycles, y, label=r'$\mathbf{y}$', linewidth=3)
+        plt.legend(fontsize=24, title_fontsize=18)
+        plt.xlabel("cycles", fontsize=22, fontweight='bold')
+        plt.ylabel("RUL", fontsize=22, fontweight='bold')
+        plt.xticks(fontsize=18)
+        plt.yticks(ticks=ytick, fontsize=18)
+        plt.grid(True)
+            
+        plt.tight_layout(rect=[0, 0, 0.95, 1])
+        
         if xlim is not None:
             plt.xlim(xlim)
         if ylim is not None:
             plt.ylim(ylim)
 
         if save_path:
-            path = save_path+"model_"+str(k1)+"_fold_"+str(k2)+"_pred_"+data_name+"_ts_"+str(idx)+".png"
+            path = save_path+"model_"+str(k1)+"_fold_"+str(k2)+"_pred_"+data_type+"_ts_"+str(idx)+".png"
             plt.savefig(path)
         else:
             plt.show()

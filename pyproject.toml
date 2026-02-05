@@ -1,0 +1,23 @@
+[project]
+name = "pyrul-main"
+version = "0.1.0"
+description = "pyrul venv"
+readme = "README.md"
+requires-python = ">=3.11.11"
+dependencies = [
+    "dtw-python==1.5.3",
+    "ipykernel>=7.1.0",
+    "ipython>=9.10.0",
+    "matplotlib==3.10.0",
+    "numpy==1.26.4",
+    "optuna==4.2.1",
+    "pandas==2.2.3",
+    "scikit-learn==1.6.1",
+    "scipy==1.15.1",
+    "seaborn==0.13.2",
+    "torch==2.6.0",
+    "tensorflow==2.16.1",
+    "tensorflow-intel==2.16.1",
+    "tensorflow-io-gcs-filesystem==0.31.0",
+    "tslearn==0.6.3",
+]

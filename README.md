@@ -2,13 +2,13 @@
 
 # pyrul : Remaining Useful Life Benchmark
 
-pyrul is a local Python library for remaining useful life (RUL) estimation benchmarking on CMAPSS FD001.
+pyrul is an open local Python library for remaining useful life (RUL) estimation benchmarking on CMAPSS FD001.
 
 ## I. Benchmark
 
 ### I.1. Models
 - Reproduced RUL prediction models are from the following works:
-    - CMAPSS Dataset:
+    - CMAPSS FD001 Dataset:
         - Direct Remaining Useful Life Estimation Based on Support Vector Regression (Racha Khelif, 2017)
         - Long Short-Term Memory Network for Remaining Useful Life Estimation (Shuai Zheng, 2017)
         - Deep separable convolutional network for remaining useful life prediction of machinery (Biao Wang, 2019)
@@ -23,7 +23,7 @@ pyrul is a local Python library for remaining useful life (RUL) estimation bench
 
 ### I.2. Results
 
-Obtained results on test data across 10 seeds are given in the following table.
+Obtained results on CMAPSS FD001 test data across 10 seeds are given in the following table.
 
 | Model | RMSE (x10) | MAE (x10) | Scoring (x10²) | IT (s) |
 | :---: | :--------: | :-------: | :------------: | :----: |
@@ -42,8 +42,13 @@ Obtained results on test data across 10 seeds are given in the following table.
 ## II. Running Models
 
 ### II.1. Installation
-Download the repository and create a conda environnement with the following requirements:
-- python 3.11.11
+Please note that pyrul was tested on the following computer settings :
+- Windows 11 64x
+- Intel(R) Core(TM) Ultra 7 165U
+- GPU Nvidia A30 (CUDA 12.2 / nvidia-cudnn-cu12 9.1.0.70)
+
+<br>Important dependencies</br>
+Regardless of the package manager, the most important dependencies to install for pyrul to work are listed below :
 - tensorflow 2.16.1
 - optuna 4.2.1
 - torch 2.6.0
@@ -54,9 +59,22 @@ Download the repository and create a conda environnement with the following requ
 - matplotlib 3.10.0
 - seaborn 0.13.2
 - dtw-python 1.5.3
+- tslearn 0.6.3
 
+Below, we provide instructions for quickly installing pyrul dependencies with pip or uv, <u>under the aforementionned computer settings</u>. To utilize the GPU under tensorflow, please follow the recommended instructions for GPU support at https://www.tensorflow.org/install/pip?hl=en.
 
-The 3 essential notebooks to create, train and evaluate models are located inside the Model folder, that includes:
+<br>Installing with pip</br>
+
+Download the repository and create a conda environnement with python 3.11.11, then, when inside the main repository directory, run <code>pip install -r requirements.txt</code>.
+Both tensorflow and pytorch are required, and may take up some time to download.
+
+<br>Installing with uv</br>
+
+Download the repository and run <code>uv init python 3.11.11</code>, then <code>uv python pin 3.11.11</code>, then <code>uv sync</code>.
+
+### II.2. Working with pyrul
+
+Once installed, the 3 essential notebooks to create, train and evaluate models are located inside the Model folder, that includes:
 - Model.ipynb : A starter to understand the main pyrul objects
 - Model HP search.ipynb : The hyperparameter search algorithm
 - Model Evaluation.ipynb : The evaluation of trained models.
